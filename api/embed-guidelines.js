@@ -3,8 +3,7 @@ import OpenAI from 'openai';
 import { PDFLoader } from 'langchain/document_loaders/fs/pdf';
 import { RecursiveCharacterTextSplitter } from 'langchain/text_splitter';
 import fs from 'fs';
-import path from 'path';
-import { fileURLToPath } from 'url';
+import * as pdfjs from 'pdfjs-dist';
 
 // Initialize OpenAI and Pinecone
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
@@ -49,11 +48,9 @@ export default async function handler(req, res) {
     
     // Load PDF and split
     const loader = new PDFLoader(tmpPath, {
-      // Explicitly set pdfjs options to avoid any issues
-      pdfjs: {
-        disableFontFace: true,
-        useSystemFonts: false,
-      }
+      pdfjs: pdfjs,  // Directly pass the imported pdfjs module
+      disableFontFace: true,
+      useSystemFonts: false
     });
     
     const docs = await loader.load();
