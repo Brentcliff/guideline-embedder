@@ -3,15 +3,14 @@
   "type": "module",
   "dependencies": {
     "@pinecone-database/pinecone": "^1.0.1",
-    "langchain": "^0.1.14",
     "openai": "^4.14.0",
-    "pdf-parse": "^1.1.1",
-    "pdfjs-dist": "^3.11.174"
+    "pdf-parse": "^1.1.1"
+  },
+  "devDependencies": {
+    "pdf.js-extract": "^0.2.1"
   },
   "scripts": {
-    "build": "npm install && node setup.js",
-    "dev": "node server.js",
-    "start": "node server.js"
+    "build": "npm install"
   },
   "engines": {
     "node": ">=18.0.0"
