@@ -7,7 +7,7 @@ import fs from 'fs';
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 const pinecone = new Pinecone({
-  apiKey: process.env.pcsk_6DQyJ9_PMWJuN4jhCdPY5KwaX2bTf81YZce1ErGFaG8JRkpz1QCidLVe2Tjn8LDh6snVC7,
+  apiKey: process.env.PINECONE_API_KEY,
   environment: process.env.PINECONE_ENVIRONMENT,
 });
 
