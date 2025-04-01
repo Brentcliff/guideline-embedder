@@ -1,6 +1,5 @@
 import { Pinecone } from '@pinecone-database/pinecone';
 import OpenAI from 'openai';
-import { RecursiveCharacterTextSplitter } from 'langchain/text_splitter';
 import fs from 'fs';
 import { createRequire } from 'module';
 import path from 'path';
