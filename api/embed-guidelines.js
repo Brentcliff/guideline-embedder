@@ -1,3 +1,4 @@
+// Rebuilding: removed langchain, using manual chunking only
 import { Pinecone } from '@pinecone-database/pinecone';
 import OpenAI from 'openai';
 import fs from 'fs';
