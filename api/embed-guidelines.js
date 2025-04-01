@@ -1,4 +1,4 @@
-// Rebuilding: removed langchain, using manual chunking only
+// Rebuilding: removed langchain, using manual chunking only v2
 import { Pinecone } from '@pinecone-database/pinecone';
 import OpenAI from 'openai';
 import fs from 'fs';
@@ -29,20 +29,54 @@ export default async function handler(req, res) {
     const tmpPath = `/tmp/guideline-${Date.now()}.pdf`;
     console.log(`Downloading to ${tmpPath}`);
 
+    // Enhanced download process for Dropbox URLs
     try {
-      const response = await fetch(pdf);
+      console.log('Fetching from URL:', pdf);
+      
+      // Follow redirects and set appropriate headers
+      const response = await fetch(pdf, {
+        redirect: 'follow',
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+          'Accept': 'application/pdf,application/octet-stream'
+        }
+      });
+      
       if (!response.ok) {
-        throw new Error(`Failed to fetch PDF: ${response.status} ${response.statusText}`);
+        console.error(`Download failed with status: ${response.status} ${response.statusText}`);
+        return res.status(400).json({ error: `Failed to download PDF: ${response.status} ${response.statusText}` });
       }
+      
+      const contentType = response.headers.get('content-type');
+      console.log('Content-Type:', contentType);
+      
       const buffer = await response.arrayBuffer();
-      fs.writeFileSync(tmpPath, Buffer.from(buffer));
-      console.log(`Download complete, file size: ${Buffer.from(buffer).length} bytes`);
+      const pdfBuffer = Buffer.from(buffer);
+      
+      console.log(`Downloaded file size: ${pdfBuffer.length} bytes`);
+      
+      // Sanity check to verify it looks like a PDF
+      if (pdfBuffer.length >= 5) {
+        const header = pdfBuffer.slice(0, 5).toString('ascii');
+        console.log('File header:', header);
+        if (header !== '%PDF-') {
+          console.warn('Warning: File does not have PDF header. Got:', header);
+          // Continue anyway, but log the warning
+        }
+      } else {
+        console.error('File too small to be a valid PDF');
+        return res.status(400).json({ error: 'Downloaded file is too small to be a valid PDF' });
+      }
+      
+      fs.writeFileSync(tmpPath, pdfBuffer);
+      console.log('File written to disk at:', tmpPath);
+      
     } catch (fetchError) {
       console.error('Error downloading PDF:', fetchError);
       return res.status(500).json({ error: 'Failed to download PDF', details: fetchError.message });
     }
 
-    // Parse PDF using pdf-parse
+    // Parse PDF using pdf-parse with enhanced error handling
     let pdfText = '';
     try {
       console.log('Attempting to parse PDF...');
@@ -54,9 +88,21 @@ export default async function handler(req, res) {
       }
 
       const pdfBuffer = fs.readFileSync(tmpPath);
-      const data = await pdfParse(pdfBuffer);
+      
+      // Use more explicit options for pdf-parse
+      const data = await pdfParse(pdfBuffer, {
+        max: 0,  // No page limit
+        pagerender: function(pageData) { return ''; }, // Skip rendering for speed
+        version: 'v2.0.0'  // Use stable version
+      });
+      
       pdfText = data.text;
-      console.log(`PDF parsed successfully, text length: ${pdfText.length} chars`);
+      console.log(`PDF parsed successfully: ${pdfText.length} chars, ${data.numpages} pages`);
+      
+      if (pdfText.length === 0) {
+        console.warn('Warning: PDF parsed but contains no text');
+      }
+      
     } catch (pdfError) {
       console.error('PDF parsing error:', pdfError);
       return res.status(500).json({
@@ -71,6 +117,14 @@ export default async function handler(req, res) {
       } catch (e) {
         console.log('Could not delete temp file:', e);
       }
+    }
+
+    // Check if we actually got text content
+    if (pdfText.length === 0) {
+      return res.status(200).json({
+        message: "PDF was processed but contained no text to embed",
+        chunks: 0
+      });
     }
 
     // Manual chunking
