@@ -1,7 +1,7 @@
 {
   "version": 2,
-  "buildCommand": "npm install --force",
-  "installCommand": "npm install --force",
+"buildCommand": "node api/setup.js && npm install --force",
+"installCommand": "npm install --force",
   "functions": {
     "api/**/*.js": {
       "memory": 1024,
