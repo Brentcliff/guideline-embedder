@@ -1,4 +1,4 @@
-// Rebuilding: removed langchain, using manual chunking only v2
+// Rebuilding: removed langchain, using manual chunking only
 import { Pinecone } from '@pinecone-database/pinecone';
 import OpenAI from 'openai';
 import fs from 'fs';
@@ -16,6 +16,32 @@ const index = pinecone.Index(process.env.PINECONE_INDEX);
 // Create require function for CommonJS modules
 const require = createRequire(import.meta.url);
 
+// Helper function to convert Dropbox links to direct download links
+async function getDirectDownloadURL(url) {
+  // Check if it's a Dropbox URL
+  if (url.includes('dropbox.com')) {
+    // If it already has dl=1, use it directly
+    if (url.includes('dl=1')) {
+      return url;
+    }
+    
+    // Replace dl=0 with dl=1 if present
+    if (url.includes('dl=0')) {
+      return url.replace('dl=0', 'dl=1');
+    }
+    
+    // Add dl=1 if no dl parameter
+    if (url.includes('?')) {
+      return `${url}&dl=1`;
+    } else {
+      return `${url}?dl=1`;
+    }
+  }
+  
+  // Not a Dropbox URL, return as is
+  return url;
+}
+
 export default async function handler(req, res) {
   try {
     const { pdf } = req.query;
@@ -25,20 +51,24 @@ export default async function handler(req, res) {
 
     console.log(`Starting process for: ${pdf}`);
 
+    // Get direct download URL if needed
+    const directURL = await getDirectDownloadURL(pdf);
+    console.log(`Using direct download URL: ${directURL}`);
+
     // Download PDF to /tmp
     const tmpPath = `/tmp/guideline-${Date.now()}.pdf`;
     console.log(`Downloading to ${tmpPath}`);
 
-    // Enhanced download process for Dropbox URLs
+    // Enhanced download process
     try {
-      console.log('Fetching from URL:', pdf);
+      console.log('Fetching from URL:', directURL);
       
       // Follow redirects and set appropriate headers
-      const response = await fetch(pdf, {
+      const response = await fetch(directURL, {
         redirect: 'follow',
         headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-          'Accept': 'application/pdf,application/octet-stream'
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
+          'Accept': 'application/pdf,application/octet-stream,*/*'
         }
       });
       
@@ -55,13 +85,16 @@ export default async function handler(req, res) {
       
       console.log(`Downloaded file size: ${pdfBuffer.length} bytes`);
       
-      // Sanity check to verify it looks like a PDF
+      // Check if file appears to be a PDF
       if (pdfBuffer.length >= 5) {
         const header = pdfBuffer.slice(0, 5).toString('ascii');
         console.log('File header:', header);
         if (header !== '%PDF-') {
           console.warn('Warning: File does not have PDF header. Got:', header);
-          // Continue anyway, but log the warning
+          // If not a PDF, return an error
+          if (!header.includes('PDF')) {
+            return res.status(400).json({ error: 'The downloaded file is not a valid PDF' });
+          }
         }
       } else {
         console.error('File too small to be a valid PDF');
@@ -80,7 +113,17 @@ export default async function handler(req, res) {
     let pdfText = '';
     try {
       console.log('Attempting to parse PDF...');
-      const pdfParse = require('pdf-parse');
+      // Dynamically load pdf-parse with proper error handling
+      let pdfParse;
+      try {
+        pdfParse = require('pdf-parse');
+      } catch (moduleError) {
+        console.error('Error loading pdf-parse module:', moduleError);
+        return res.status(500).json({ 
+          error: 'Failed to load PDF parsing library',
+          details: moduleError.message
+        });
+      }
 
       if (typeof pdfParse !== 'function') {
         console.error('pdf-parse import is not a function:', typeof pdfParse);
@@ -89,11 +132,9 @@ export default async function handler(req, res) {
 
       const pdfBuffer = fs.readFileSync(tmpPath);
       
-      // Use more explicit options for pdf-parse
+      // Use minimal options for pdf-parse to avoid dependency issues
       const data = await pdfParse(pdfBuffer, {
-        max: 0,  // No page limit
-        pagerender: function(pageData) { return ''; }, // Skip rendering for speed
-        version: 'v2.0.0'  // Use stable version
+        max: 0  // No page limit
       });
       
       pdfText = data.text;
