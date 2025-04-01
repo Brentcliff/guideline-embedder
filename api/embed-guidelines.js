@@ -6,7 +6,7 @@ import fs from 'fs';
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 const pinecone = new Pinecone({ apiKey: process.env.pcsk_6DQyJ9_PMWJuN4jhCdPY5KwaX2bTf81YZce1ErGFaG8JRkpz1QCidLVe2Tjn8LDh6snVC7 });
-const index = pinecone.Index(process.env.PINECONE_INDEX);
+const index = pinecone.Index(process.env.us-east1-gcp);
 
 export default async function handler(req, res) {
   try {
