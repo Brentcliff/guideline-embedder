@@ -1,18 +1,9 @@
 // api/process-pdf.js
-import { createRequire } from 'module';
 import fs from 'fs';
+import { createRequire } from 'module';
 
+// Create require function for CommonJS modules
 const require = createRequire(import.meta.url);
-
-// Helper function to convert Dropbox links to direct download links
-async function getDirectDownloadURL(url) {
-  if (url.includes('dropbox.com')) {
-    if (url.includes('dl=1')) return url;
-    if (url.includes('dl=0')) return url.replace('dl=0', 'dl=1');
-    return url.includes('?') ? `${url}&dl=1` : `${url}?dl=1`;
-  }
-  return url;
-}
 
 export default async function handler(req, res) {
   try {
@@ -21,10 +12,9 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: "Missing 'pdf' query parameter" });
     }
 
-    const directURL = await getDirectDownloadURL(pdf);
-    console.log(`Processing PDF: ${directURL} (Job ID: ${jobId})`);
+    console.log(`Processing PDF: ${pdf} (Job ID: ${jobId})`);
 
-    // Use tempdir for storing processed data
+    // Create directory for storing processed data
     const outputDir = `/tmp/processed-pdfs`;
     const outputFile = `${outputDir}/${jobId}.json`;
 
@@ -35,27 +25,65 @@ export default async function handler(req, res) {
 
     // Download the PDF
     console.log('Downloading PDF...');
-    const response = await fetch(directURL, {
-      redirect: 'follow',
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
-        'Accept': 'application/pdf,application/octet-stream,*/*'
-      }
-    });
-
-    if (!response.ok) {
-      return res.status(400).json({ error: `Failed to download: ${response.status}` });
+    let response;
+    try {
+      response = await fetch(pdf, {
+        redirect: 'follow',
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
+          'Accept': 'application/pdf,application/octet-stream,*/*'
+        }
+      });
+    } catch (fetchError) {
+      console.error('Fetch error:', fetchError);
+      return res.status(500).json({ error: 'Failed to fetch PDF', details: fetchError.message });
     }
 
-    const pdfBuffer = Buffer.from(await response.arrayBuffer());
-    console.log(`Downloaded ${pdfBuffer.length} bytes`);
+    if (!response.ok) {
+      console.error(`Download failed with status: ${response.status} ${response.statusText}`);
+      return res.status(400).json({ error: `Failed to download PDF: ${response.status} ${response.statusText}` });
+    }
 
-    // Parse the PDF
+    const contentType = response.headers.get('content-type');
+    console.log('Content-Type:', contentType);
+
+    // Process the PDF
     try {
+      const buffer = await response.arrayBuffer();
+      const pdfBuffer = Buffer.from(buffer);
+      console.log(`Downloaded ${pdfBuffer.length} bytes`);
+
+      // Check if it's a PDF
+      if (pdfBuffer.length < 5 || !pdfBuffer.slice(0, 5).toString().includes('PDF')) {
+        console.error('Not a valid PDF file');
+        return res.status(400).json({ error: 'The file does not appear to be a valid PDF' });
+      }
+
+      // Parse the PDF using pdf-parse
+      console.log('Parsing PDF...');
       const pdfParse = require('pdf-parse');
       const data = await pdfParse(pdfBuffer);
-      const chunks = splitTextIntoChunks(data.text);
       
+      console.log(`PDF parsed: ${data.numpages} pages, ${data.text.length} characters`);
+
+      // Split the text into chunks
+      function splitTextIntoChunks(text, chunkSize = 800, overlap = 100) {
+        const chunks = [];
+        let start = 0;
+        while (start < text.length) {
+          const end = Math.min(start + chunkSize, text.length);
+          chunks.push({
+            pageContent: text.slice(start, end),
+            metadata: { source: 'VA Guide' }
+          });
+          start = end - overlap;
+        }
+        return chunks;
+      }
+
+      const chunks = splitTextIntoChunks(data.text);
+      console.log(`Split into ${chunks.length} chunks`);
+
       // Store the chunks for later processing
       fs.writeFileSync(outputFile, JSON.stringify({
         jobId,
@@ -63,37 +91,21 @@ export default async function handler(req, res) {
         chunks,
         timestamp: new Date().toISOString()
       }));
+
+      console.log(`Saved processing results to ${outputFile}`);
       
       return res.status(200).json({
         message: "PDF processed successfully",
         jobId,
         chunkCount: chunks.length,
-        // Return a signed URL for accessing the chunks directly from client
         embedUrl: `/api/embed-chunks?jobId=${jobId}`
       });
     } catch (err) {
-      console.error('PDF parsing error:', err);
-      return res.status(500).json({ error: 'PDF parsing failed', details: err.message });
+      console.error('PDF processing error:', err);
+      return res.status(500).json({ error: 'PDF processing failed', details: err.message });
     }
   } catch (error) {
     console.error('Handler error:', error);
     return res.status(500).json({ error: error.message });
   }
-}
-
-// Helper function to split text into chunks
-function splitTextIntoChunks(text, chunkSize = 800, overlap = 100) {
-  const chunks = [];
-  let start = 0;
-  
-  while (start < text.length) {
-    const end = Math.min(start + chunkSize, text.length);
-    chunks.push({
-      pageContent: text.slice(start, end),
-      metadata: { source: 'VA Guide' }
-    });
-    start = end - overlap;
-  }
-  
-  return chunks;
 }
