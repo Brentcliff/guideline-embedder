@@ -30,6 +30,7 @@ async function getDirectDownloadURL(url) {
   return url;
 }
 
+// In embed-guidelines.js
 export default async function handler(req, res) {
   const { pdf } = req.query;
   
@@ -45,11 +46,32 @@ export default async function handler(req, res) {
     console.log(`Original URL: ${pdf}`);
     console.log(`Direct download URL: ${directUrl}`);
     
-    // Step 1: Process the PDF - this should complete quickly
-    const processUrl = `https://${req.headers.host}/api/process-pdf?pdf=${encodeURIComponent(directUrl)}&jobId=${jobId}`;
+    // Use absolute URLs instead of relative ones
+    const host = req.headers.host || 'guideline-embedder.vercel.app';
+    const processUrl = `https://${host}/api/process-pdf?pdf=${encodeURIComponent(directUrl)}&jobId=${jobId}`;
     console.log(`Calling process-pdf endpoint: ${processUrl}`);
     
-    const processResponse = await fetch(processUrl);
+    // Use node-fetch options to ensure proper handling
+    const processResponse = await fetch(processUrl, {
+      method: 'GET',
+      headers: {
+        'Accept': 'application/json'
+      }
+    });
+    
+    // Check if the response is valid JSON
+    const contentType = processResponse.headers.get('content-type');
+    if (!contentType || !contentType.includes('application/json')) {
+      console.error(`Received non-JSON response: ${contentType}`);
+      const text = await processResponse.text();
+      console.error(`Response body: ${text.substring(0, 500)}...`);
+      return res.status(500).json({ 
+        error: 'Invalid response from process-pdf endpoint',
+        contentType: contentType,
+        responsePreview: text.substring(0, 200)
+      });
+    }
+    
     const processResult = await processResponse.json();
     
     if (!processResponse.ok) {
@@ -57,10 +79,11 @@ export default async function handler(req, res) {
       return res.status(processResponse.status).json(processResult);
     }
     
-    // Step 2: Start the embedding process but don't wait for it to complete
-    const embedUrl = `https://${req.headers.host}/api/embed-chunks?jobId=${jobId}`;
+    // Start the embedding process but don't wait for it to complete
+    const embedUrl = `https://${host}/api/embed-chunks?jobId=${jobId}`;
     console.log(`Starting background embedding process: ${embedUrl}`);
     
+    // Fire and forget
     fetch(embedUrl).catch(error => {
       console.error('Error starting embedding process:', error);
     });
